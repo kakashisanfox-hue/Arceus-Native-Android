@@ -19,8 +19,16 @@ jobs:
           gradle-version: "8.9"
       - name: Install Android SDK
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | head -1)
+          fi
+          if [ -z "$SDKMANAGER" ]; then
+            echo "Android SDK Manager nao encontrado"
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0"
       - name: Build APK
         run: gradle :app:assembleDebug --stacktrace
       - name: Upload APK
