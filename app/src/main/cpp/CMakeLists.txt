@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(arceus_native_engine LANGUAGES CXX)
+add_library(arceus_engine SHARED native_engine.cpp)
+target_compile_features(arceus_engine PRIVATE cxx_std_17)
+find_library(vulkan_lib vulkan)
+target_link_libraries(arceus_engine ${vulkan_lib})
