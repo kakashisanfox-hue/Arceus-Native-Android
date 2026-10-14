@@ -86,7 +86,7 @@ object NsoLoader {
         nsoOffset: Long, key: ByteArray, fs: ByteArray,
         ncaAbsolute: Long, readAt: (Long, Int) -> ByteArray
     ): String {
-        val log = StringBuilder("\n===== NSO LOADER v3.0: $name =====\n")
+        val log = StringBuilder("\n===== NSO LOADER v3.1: $name =====\n")
         try {
             require(header.size >= 0x100 && String(header, 0, 4, Charsets.US_ASCII) == "NSO0") { "NSO0 invalido" }
             val b = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN)
@@ -137,6 +137,8 @@ object NsoLoader {
                 log.append("BSS: $bss bytes\n")
                 log.append("Imagem de memoria: $end bytes\n")
                 log.append("MONTAGEM CONCLUIDA: 3/3 segmentos\n")
+                // MOD0_INSPECT_V31
+                log.append(Mod0Inspector.inspect(memory, name))
                 log.append("Relocacao, HLE e execucao ARM64 ainda pendentes.\n")
             } finally { memory.fill(0) }
         } catch (e: Exception) {
