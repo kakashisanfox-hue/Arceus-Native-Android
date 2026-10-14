@@ -43,7 +43,7 @@ object NcaHeaderCrypto {
         key: ByteArray
     ): ByteArray {
         require(key.size == 32)
-        require(encrypted.size == 0x400)
+        require(encrypted.size == 0xC00)
 
         val dataCipher = Cipher.getInstance("AES/ECB/NoPadding")
         dataCipher.init(
@@ -59,7 +59,7 @@ object NcaHeaderCrypto {
 
         val output = ByteArray(encrypted.size)
 
-        for (sector in 0 until 2) {
+        for (sector in 0 until 6) {
             val sectorNumber = ByteArray(16)
             // Nintendo XTS: numero do setor em big endian.
             sectorNumber[15] = sector.toByte()
