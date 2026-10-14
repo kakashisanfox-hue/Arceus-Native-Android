@@ -20,7 +20,15 @@ Java_com_matheus_arceusnative_MainActivity_nativeDiagnostics(JNIEnv* env, jobjec
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
     out << "Teste ARM64: OK (" << ms << " ms)\nChecksum: " << checksum << "\n";
     uint32_t version = VK_API_VERSION_1_0;
-    auto res = vkEnumerateInstanceVersion(&version);
+    auto res = ([&]() -> VkResult {
+        auto fn = reinterpret_cast<PFN_vkEnumerateInstanceVersion>(
+            vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkEnumerateInstanceVersion"));
+        if (!fn) {
+            version = VK_API_VERSION_1_0;
+            return VK_SUCCESS;
+        }
+        return fn(&version);
+    }());
     if (res == VK_SUCCESS) {
         out << "Vulkan loader: " << VK_VERSION_MAJOR(version) << "." << VK_VERSION_MINOR(version) << "\n";
         VkApplicationInfo app{};
