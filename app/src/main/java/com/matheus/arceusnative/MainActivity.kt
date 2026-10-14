@@ -9,6 +9,8 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.view.SurfaceView
+import android.view.SurfaceHolder
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -16,6 +18,7 @@ class MainActivity : Activity() {
     companion object { init { System.loadLibrary("arceus_engine") } }
     external fun nativeDiagnostics(): String
     external fun nativeGpuTest(): String
+    external fun nativeRenderSurface(surface: android.view.Surface): String
     private lateinit var status: TextView
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -25,7 +28,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(15, 20, 31))
         }
         val title = TextView(this).apply {
-            text = "Arceus Native Engine v0.4"
+            text = "Arceus Native Engine v0.5"
             textSize = 24f
             setTextColor(Color.WHITE)
         }
@@ -51,6 +54,41 @@ class MainActivity : Activity() {
                 }.start()
             }
         }
+        val render = Button(this).apply {
+            text = "Testar renderizacao Vulkan na tela"
+            setOnClickListener {
+                val screen = SurfaceView(this@MainActivity)
+                val resultText = TextView(this@MainActivity).apply {
+                    text = "Preparando superficie Vulkan..."
+                    textSize = 16f
+                    setTextColor(Color.WHITE)
+                    setPadding(24, 24, 24, 24)
+                }
+                val close = Button(this@MainActivity).apply {
+                    text = "Voltar ao motor"
+                    setOnClickListener { recreate() }
+                }
+                val scene = LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setBackgroundColor(Color.rgb(15, 20, 31))
+                    addView(screen, LinearLayout.LayoutParams(-1, 0, 1f))
+                    addView(resultText)
+                    addView(close)
+                }
+                setContentView(scene)
+                screen.holder.addCallback(object : SurfaceHolder.Callback {
+                    override fun surfaceCreated(holder: SurfaceHolder) {
+                        Thread {
+                            val result = try { nativeRenderSurface(holder.surface) }
+                                catch (e: Throwable) { "Erro Vulkan: ${e.message}" }
+                            runOnUiThread { resultText.text = result }
+                        }.start()
+                    }
+                    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+                    override fun surfaceDestroyed(holder: SurfaceHolder) {}
+                })
+            }
+        }
         val choose = Button(this).apply {
             text = "Selecionar XCI"
             setOnClickListener {
@@ -70,6 +108,7 @@ class MainActivity : Activity() {
         layout.addView(title)
         layout.addView(test)
         layout.addView(gpuTest)
+        layout.addView(render)
         layout.addView(choose)
         layout.addView(driver)
         layout.addView(status)
