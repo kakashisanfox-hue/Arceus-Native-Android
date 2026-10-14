@@ -30,7 +30,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(15, 20, 31))
         }
         val title = TextView(this).apply {
-            text = "Arceus Native Engine v0.8"
+            text = "Arceus Native Engine v0.9"
             textSize = 24f
             setTextColor(Color.WHITE)
         }
@@ -285,6 +285,25 @@ class MainActivity : Activity() {
                         if (absolute < dataStart ||
                             absolute > total ||
                             size > total - absolute) continue
+
+                        if (label == "secure" &&
+                            name.endsWith(".nca") && size >= 0x400L) {
+                            val magic = readAt(absolute + 0x200L, 4)
+                            val hex = magic.joinToString("") {
+                                "%02X".format(it.toInt() and 255)
+                            }
+                            val plain = String(
+                                magic, Charsets.US_ASCII
+                            )
+                            val recognized = plain in listOf(
+                                "NCA0", "NCA1", "NCA2", "NCA3"
+                            )
+                            out.append(
+                                "  NCA header: " +
+                                if (recognized) "$plain (legivel)\n"
+                                else "$hex (criptografado ou desconhecido)\n"
+                            )
+                        }
 
                         if (shown < 80) {
                             out.append("  $name: %.2f MiB\n".format(
