@@ -29,6 +29,11 @@ jobs:
           fi
           yes | "$SDKMANAGER" --licenses || true
           "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1" "ndk;27.2.12479018" "cmake;3.22.1"
+      - name: Compile Vulkan shaders
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y glslang-tools
+          python3 compile_shaders.py
       - name: Build APK
         run: gradle :app:assembleDebug --stacktrace
       - name: Upload APK
