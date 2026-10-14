@@ -30,7 +30,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(15, 20, 31))
         }
         val title = TextView(this).apply {
-            text = "Arceus Native Engine v0.7"
+            text = "Arceus Native Engine v0.8"
             textSize = 24f
             setTextColor(Color.WHITE)
         }
@@ -232,7 +232,7 @@ class MainActivity : Activity() {
                     .order(ByteOrder.LITTLE_ENDIAN).long
 
                 val out = StringBuilder()
-                out.append("ARCEUS NATIVE ENGINE v0.8\n")
+                out.append("ARCEUS NATIVE ENGINE v0.8 - HFS0 FIX 2\n")
                 out.append("XCI reconhecida\n")
                 out.append("Tamanho: %.2f GiB\n\n".format(
                     total.toDouble() / (1024.0 * 1024 * 1024)
@@ -251,7 +251,7 @@ class MainActivity : Activity() {
                     val namesSize = meta.getInt(8)
 
                     if (count !in 0..10000 ||
-                        namesSize !in 1..1048576)
+                        namesSize !in 0..1048576)
                         throw Exception("Tabela HFS0 invalida em $label: count=$count, namesSize=$namesSize, offset=$offset")
 
                     val entries = readAt(offset + 16, count * 64)
