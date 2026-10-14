@@ -200,48 +200,120 @@ class MainActivity : Activity() {
             }.start()
         }
     }
+
     private fun inspect(uri: Uri): String {
-        val pfd = contentResolver.openFileDescriptor(uri, "r") ?: return "Arquivo indisponivel"
+        val pfd = contentResolver.openFileDescriptor(uri, "r")
+            ?: return "Arquivo indisponivel"
         pfd.use { descriptor ->
             java.io.FileInputStream(descriptor.fileDescriptor).use { stream ->
                 val channel = stream.channel
+                val total = channel.size()
+
                 fun readAt(pos: Long, n: Int): ByteArray {
+                    if (pos < 0 || n < 0 || pos > total ||
+                        n.toLong() > total - pos)
+                        throw Exception("Leitura fora do arquivo")
                     val b = ByteBuffer.allocate(n)
                     var at = pos
                     while (b.hasRemaining()) {
                         val count = channel.read(b, at)
-                        if (count <= 0) throw Exception("Leitura incompleta em $at")
+                        if (count <= 0)
+                            throw Exception("Leitura incompleta em $at")
                         at += count
                     }
                     return b.array()
                 }
-                val header = readAt(0x100, 0x38)
-                if (String(header, 0, 4, Charsets.US_ASCII) != "HEAD") return "Assinatura HEAD nao encontrada."
-                val root = ByteBuffer.wrap(header, 0x30, 8).order(ByteOrder.LITTLE_ENDIAN).long
-                if (root < 0 || root > channel.size() - 16) return "Offset raiz invalido"
-                val hfs = readAt(root, 16)
-                if (String(hfs, 0, 4, Charsets.US_ASCII) != "HFS0") return "HFS0 nao encontrado no offset $root"
-                val meta = ByteBuffer.wrap(hfs).order(ByteOrder.LITTLE_ENDIAN)
-                val count = meta.getInt(4)
-                val namesSize = meta.getInt(8)
-                if (count !in 1..100 || namesSize !in 1..65536) return "Tabela de particoes invalida"
-                val entries = readAt(root + 16, count * 64)
-                val names = readAt(root + 16 + count * 64L, namesSize)
-                val out = StringBuilder("XCI reconhecida!\nTamanho: %.2f GiB\n\nParticoes:\n".format(channel.size().toDouble() / (1024.0*1024*1024)))
-                for (idx in 0 until count) {
-                    val e = ByteBuffer.wrap(entries, idx * 64, 64).order(ByteOrder.LITTLE_ENDIAN)
-                    e.long
-                    val size = e.long
-                    val nameOffset = e.int
-                    if (nameOffset !in names.indices) continue
-                    var end = nameOffset
-                    while (end < names.size && names[end] != 0.toByte()) end++
-                    val name = String(names, nameOffset, end - nameOffset, Charsets.UTF_8)
-                    out.append("• $name: %.3f GiB\n".format(size.toDouble() / (1024.0*1024*1024)))
+
+                val header = readAt(0x100L, 0x38)
+                if (String(header, 0, 4, Charsets.US_ASCII) != "HEAD")
+                    return "Assinatura XCI HEAD nao encontrada"
+
+                val root = ByteBuffer.wrap(header, 0x30, 8)
+                    .order(ByteOrder.LITTLE_ENDIAN).long
+
+                val out = StringBuilder()
+                out.append("ARCEUS NATIVE ENGINE v0.8\n")
+                out.append("XCI reconhecida\n")
+                out.append("Tamanho: %.2f GiB\n\n".format(
+                    total.toDouble() / (1024.0 * 1024 * 1024)
+                ))
+
+                fun parseHfs(offset: Long, label: String, level: Int) {
+                    if (level > 2) return
+                    val h = readAt(offset, 16)
+                    if (String(h, 0, 4, Charsets.US_ASCII) != "HFS0") {
+                        out.append("$label: HFS0 nao encontrado\n")
+                        return
+                    }
+                    val meta = ByteBuffer.wrap(h)
+                        .order(ByteOrder.LITTLE_ENDIAN)
+                    val count = meta.getInt(4)
+                    val namesSize = meta.getInt(8)
+
+                    if (count !in 1..10000 ||
+                        namesSize !in 1..1048576)
+                        throw Exception("Tabela HFS0 invalida")
+
+                    val entries = readAt(offset + 16, count * 64)
+                    val names = readAt(
+                        offset + 16 + count * 64L, namesSize
+                    )
+                    val dataStart = offset + 16 +
+                        count * 64L + namesSize
+
+                    out.append("$label: $count entradas\n")
+                    var shown = 0
+                    for (idx in 0 until count) {
+                        val e = ByteBuffer.wrap(
+                            entries, idx * 64, 64
+                        ).order(ByteOrder.LITTLE_ENDIAN)
+                        val relative = e.long
+                        val size = e.long
+                        val nameOffset = e.int
+                        if (nameOffset !in names.indices ||
+                            relative < 0 || size < 0) continue
+
+                        var end = nameOffset
+                        while (end < names.size &&
+                            names[end] != 0.toByte()) end++
+
+                        val name = String(
+                            names, nameOffset, end - nameOffset,
+                            Charsets.UTF_8
+                        )
+                        val absolute = dataStart + relative
+                        if (absolute < dataStart ||
+                            absolute > total ||
+                            size > total - absolute) continue
+
+                        if (shown < 80) {
+                            out.append("  $name: %.2f MiB\n".format(
+                                size.toDouble() / (1024.0 * 1024)
+                            ))
+                            shown++
+                        }
+
+                        if (level == 0 &&
+                            (name == "secure" ||
+                             name == "normal" ||
+                             name == "update" ||
+                             name == "logo")) {
+                            parseHfs(absolute, name, level + 1)
+                        }
+                    }
+                    if (count > shown)
+                        out.append("  (lista limitada)\n")
                 }
-                out.append("\nAnalise somente leitura. Execucao nativa ainda nao implementada.")
+
+                parseHfs(root, "Raiz", 0)
+                out.append(
+                    "\nLeitura de metadados apenas. " +
+                    "NCA nao descriptografado. " +
+                    "Codigo do jogo ainda nao executado."
+                )
                 return out.toString()
             }
         }
     }
+
 }
