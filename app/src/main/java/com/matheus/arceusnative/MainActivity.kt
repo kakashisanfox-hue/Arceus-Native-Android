@@ -28,6 +28,8 @@ class MainActivity : Activity() {
     external fun nativeRenderSurface(surface: android.view.Surface): String
     external fun nativeAnimationTest(surface: android.view.Surface): String
     external fun nativeTriangleTest(surface: android.view.Surface): String
+    // NCA_KEYS_V13: chave mantida apenas na memoria do processo.
+    @Volatile private var ncaHeaderKey: ByteArray? = null
     private lateinit var status: TextView
     private lateinit var logoView: ImageView
     private lateinit var gifView: XciGifView
@@ -95,7 +97,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(15, 20, 31))
         }
         val title = TextView(this).apply {
-            text = "Arceus Native Engine v1.2"
+            text = "Arceus Native Engine v1.3"
             textSize = 24f
             setTextColor(Color.WHITE)
         }
@@ -201,6 +203,16 @@ class MainActivity : Activity() {
                 startActivityForResult(i, 100)
             }
         }
+        val keysButton = Button(this).apply {
+            text = "Selecionar prod.keys"
+            setOnClickListener {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                }
+                startActivityForResult(intent, 101)
+            }
+        }
         val driver = Button(this).apply {
             text = "Turnip (em desenvolvimento)"
             setOnClickListener {
@@ -249,6 +261,7 @@ class MainActivity : Activity() {
         layout.addView(animate)
         layout.addView(triangle)
         layout.addView(choose)
+        layout.addView(keysButton)
         layout.addView(driver)
         logoView = ImageView(this).apply {
             visibility = View.GONE
@@ -266,6 +279,51 @@ class MainActivity : Activity() {
     @Deprecated("Legacy result API")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 101 &&
+            resultCode == RESULT_OK && data?.data != null) {
+            val keyUri = data.data!!
+            status.text = "Verificando prod.keys localmente..."
+            Thread {
+                val report = try {
+                    val bytes = contentResolver.openInputStream(keyUri)
+                        ?.use { stream ->
+                            val buffer = java.io.ByteArrayOutputStream()
+                            val chunk = ByteArray(4096)
+                            while (true) {
+                                val n = stream.read(chunk)
+                                if (n < 0) break
+                                if (buffer.size() + n > 1024 * 1024)
+                                    throw Exception("Arquivo de chaves muito grande")
+                                buffer.write(chunk, 0, n)
+                            }
+                            buffer.toByteArray()
+                        } ?: throw Exception("Nao foi possivel abrir o arquivo")
+
+                    val parsed = NcaHeaderCrypto.parseHeaderKey(
+                        String(bytes, Charsets.UTF_8)
+                    )
+                    bytes.fill(0)
+
+                    if (parsed != null) {
+                        ncaHeaderKey?.fill(0)
+                        ncaHeaderKey = parsed
+                        "prod.keys importado localmente!\n" +
+                        "header_key encontrada (256 bits).\n" +
+                        "Nenhuma chave enviada ao GitHub.\n\n" +
+                        "Agora selecione a XCI para testar os NCAs."
+                    } else {
+                        ncaHeaderKey?.fill(0)
+                        ncaHeaderKey = null
+                        "Arquivo aberto, mas header_key valida nao encontrada.\n" +
+                        "Necessaria linha header_key com 64 caracteres hexadecimais."
+                    }
+                } catch (e: Exception) {
+                    "Falha na importacao: ${e.message}"
+                }
+                runOnUiThread { status.text = report }
+            }.start()
+            return
+        }
         if (requestCode == 100 && resultCode == RESULT_OK && data?.data != null) {
             val uri = data.data!!
             extractedLogo = null
@@ -320,8 +378,8 @@ class MainActivity : Activity() {
                     .order(ByteOrder.LITTLE_ENDIAN).long
 
                 val out = StringBuilder()
-                out.append("VISUALIZADOR XCI v1.2\n")
-                out.append("ARCEUS NATIVE ENGINE v1.2\n")
+                out.append("VISUALIZADOR XCI v1.3\n")
+                out.append("ARCEUS NATIVE ENGINE v1.3\n")
                 out.append("XCI reconhecida\n")
                 out.append("Tamanho: %.2f GiB\n\n".format(
                     total.toDouble() / (1024.0 * 1024 * 1024)
@@ -442,6 +500,70 @@ class MainActivity : Activity() {
                                 if (recognized) "$plain (legivel)\n"
                                 else "$hex (criptografado ou desconhecido)\n"
                             )
+
+                            val activeKey = ncaHeaderKey
+                            if (activeKey != null) {
+                                try {
+                                    val rawHeader = readAt(absolute, 0x400)
+                                    val decoded = NcaHeaderCrypto.decryptHeader(
+                                        rawHeader, activeKey
+                                    )
+                                    val decodedMagic = String(
+                                        decoded, 0x200, 4,
+                                        Charsets.US_ASCII
+                                    )
+                                    if (decodedMagic in listOf(
+                                        "NCA3", "NCA2", "NCA1", "NCA0"
+                                    )) {
+                                        val b = ByteBuffer.wrap(decoded)
+                                            .order(ByteOrder.LITTLE_ENDIAN)
+                                        val content = decoded[0x205]
+                                            .toInt() and 255
+                                        val type = when (content) {
+                                            0 -> "Program"
+                                            1 -> "Meta"
+                                            2 -> "Control"
+                                            3 -> "Manual"
+                                            4 -> "Data"
+                                            5 -> "PublicData"
+                                            else -> "Desconhecido"
+                                        }
+                                        val titleId = java.lang.Long
+                                            .toUnsignedString(
+                                                b.getLong(0x210), 16
+                                            ).padStart(16, '0')
+                                            .uppercase(java.util.Locale.US)
+                                        val declared = b.getLong(0x208)
+
+                                        out.append(
+                                            "  AES-XTS: SUCESSO! $decodedMagic\n"
+                                        )
+                                        out.append("  Tipo: $type\n")
+                                        out.append("  Title ID: $titleId\n")
+                                        out.append(
+                                            "  Tamanho declarado: $declared bytes\n"
+                                        )
+                                        out.append(
+                                            "  Header descriptografado; " +
+                                            "secoes internas ainda nao lidas.\n"
+                                        )
+                                    } else {
+                                        out.append(
+                                            "  AES-XTS: chave incompativel " +
+                                            "ou cabecalho desconhecido.\n"
+                                        )
+                                    }
+                                    decoded.fill(0)
+                                } catch (e: Exception) {
+                                    out.append(
+                                        "  AES-XTS: erro ${e.message}\n"
+                                    )
+                                }
+                            } else {
+                                out.append(
+                                    "  AES-XTS: importe prod.keys primeiro.\n"
+                                )
+                            }
 
                             out.append("  DIAGNOSTICO NCA v1.2\n")
 
