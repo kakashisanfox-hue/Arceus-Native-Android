@@ -252,7 +252,7 @@ class MainActivity : Activity() {
 
                     if (count !in 1..10000 ||
                         namesSize !in 1..1048576)
-                        throw Exception("Tabela HFS0 invalida")
+                        throw Exception("Tabela HFS0 invalida em $label: count=$count, namesSize=$namesSize, offset=$offset")
 
                     val entries = readAt(offset + 16, count * 64)
                     val names = readAt(
