@@ -247,45 +247,9 @@ Java_com_matheus_arceusnative_MainActivity_nativeAnimationTest(JNIEnv* env, jobj
     return env->NewStringUTF(out.str().c_str());
 }
 
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_matheus_arceusnative_MainActivity_nativeAnimationTest(JNIEnv* env, jobject, jobject surface) {
-    const auto start = std::chrono::steady_clock::now();
-    std::string last;
-    int frames = 0;
-    for (int i = 0; i < 30; ++i) {
-        last = renderOnce(env, surface, i * 0.22f);
-        if (last.find("Vulkan na tela: OK") == std::string::npos) break;
-        ++frames;
-    }
-    const auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-    std::ostringstream out;
-    out << "Animacao Vulkan experimental\n";
-    out << "Quadros apresentados: " << frames << "/30\n";
-    out << "Tempo: " << elapsed << " s\n";
-    if (elapsed > 0) out << "Taxa media (inclui recriacao Vulkan): " << (frames / elapsed) << " FPS\n";
-    out << "Nota: teste de cores, nao renderizacao 3D.\n" << last;
-    return env->NewStringUTF(out.str().c_str());
-}
 
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_matheus_arceusnative_MainActivity_nativeAnimationTest(JNIEnv* env, jobject, jobject surface) {
-    const auto start = std::chrono::steady_clock::now();
-    std::string last;
-    int frames = 0;
-    for (int i = 0; i < 30; ++i) {
-        last = renderOnce(env, surface, i * 0.22f);
-        if (last.find("Vulkan na tela: OK") == std::string::npos) break;
-        ++frames;
-    }
-    const auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-    std::ostringstream out;
-    out << "Animacao Vulkan experimental\n";
-    out << "Quadros apresentados: " << frames << "/30\n";
-    out << "Tempo: " << elapsed << " s\n";
-    if (elapsed > 0) out << "Taxa media (inclui recriacao Vulkan): " << (frames / elapsed) << " FPS\n";
-    out << "Nota: teste de cores, nao renderizacao 3D.\n" << last;
-    return env->NewStringUTF(out.str().c_str());
-}
+
+
 
 
 // Vulkan 1.0 triangle renderer. Uses the same Android surface/swapchain flow.
