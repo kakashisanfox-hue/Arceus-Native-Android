@@ -15,6 +15,7 @@ import java.nio.ByteOrder
 class MainActivity : Activity() {
     companion object { init { System.loadLibrary("arceus_engine") } }
     external fun nativeDiagnostics(): String
+    external fun nativeGpuTest(): String
     private lateinit var status: TextView
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,7 +25,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(15, 20, 31))
         }
         val title = TextView(this).apply {
-            text = "Arceus Native Engine v0.3"
+            text = "Arceus Native Engine v0.4"
             textSize = 24f
             setTextColor(Color.WHITE)
         }
@@ -38,6 +39,16 @@ class MainActivity : Activity() {
             text = "Testar motor ARM64 / Vulkan"
             setOnClickListener {
                 status.text = try { nativeDiagnostics() } catch (e: Exception) { "Erro nativo: ${e.message}" }
+            }
+        }
+        val gpuTest = Button(this).apply {
+            text = "Testar GPU Vulkan (comando real)"
+            setOnClickListener {
+                status.text = "Executando comandos na GPU..."
+                Thread {
+                    val report = try { nativeGpuTest() } catch (e: Throwable) { "Falha no teste GPU: ${e.message}" }
+                    runOnUiThread { status.text = report }
+                }.start()
             }
         }
         val choose = Button(this).apply {
@@ -58,6 +69,7 @@ class MainActivity : Activity() {
         }
         layout.addView(title)
         layout.addView(test)
+        layout.addView(gpuTest)
         layout.addView(choose)
         layout.addView(driver)
         layout.addView(status)
