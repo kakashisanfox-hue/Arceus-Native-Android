@@ -250,7 +250,7 @@ class MainActivity : Activity() {
                     val count = meta.getInt(4)
                     val namesSize = meta.getInt(8)
 
-                    if (count !in 1..10000 ||
+                    if (count !in 0..10000 ||
                         namesSize !in 1..1048576)
                         throw Exception("Tabela HFS0 invalida em $label: count=$count, namesSize=$namesSize, offset=$offset")
 
