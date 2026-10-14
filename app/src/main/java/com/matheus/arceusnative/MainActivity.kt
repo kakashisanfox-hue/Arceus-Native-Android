@@ -99,7 +99,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(15, 20, 31))
         }
         val title = TextView(this).apply {
-            text = "Arceus Native Engine v2.2 Experimental"
+            text = "Arceus Native Engine v3.0 Experimental"
             textSize = 24f
             setTextColor(Color.WHITE)
         }
@@ -386,8 +386,8 @@ class MainActivity : Activity() {
                     .order(ByteOrder.LITTLE_ENDIAN).long
 
                 val out = StringBuilder()
-                out.append("VISUALIZADOR XCI v2.2\n")
-                out.append("ARCEUS NATIVE ENGINE v2.2\n")
+                out.append("VISUALIZADOR XCI v3.0\n")
+                out.append("ARCEUS NATIVE ENGINE v3.0\n")
                 out.append("XCI reconhecida\n")
                 out.append("Tamanho: %.2f GiB\n\n".format(
                     total.toDouble() / (1024.0 * 1024 * 1024)

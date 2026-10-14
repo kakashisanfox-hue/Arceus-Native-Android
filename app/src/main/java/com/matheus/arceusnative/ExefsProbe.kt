@@ -86,7 +86,7 @@ object ExefsProbe {
         readAt: (Long, Int) -> ByteArray
     ): String {
         val out = StringBuilder()
-        out.append("\n===== EXEFS v2.2 =====\n")
+        out.append("\n===== EXEFS v3.0 =====\n")
 
         try {
             val b = ByteBuffer.wrap(header)
@@ -316,6 +316,14 @@ object ExefsProbe {
                                         nsoHeader
                                     )
                                 )
+                                // NSO_LOADER_V30
+                                out.append(NsoLoader.load(
+                                    name, nsoHeader, fileSize,
+                                    nsoOffset, contentKey,
+                                    header.copyOfRange(fsBase, fsBase + 0x200),
+                                    ncaAbsolute,
+                                    { position, length -> readAt(position, length) }
+                                ))
                                 out.append("\n")
 
                                 nsoHeader.fill(0)
