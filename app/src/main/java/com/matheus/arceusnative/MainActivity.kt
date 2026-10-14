@@ -95,7 +95,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(15, 20, 31))
         }
         val title = TextView(this).apply {
-            text = "Arceus Native Engine v1.1"
+            text = "Arceus Native Engine v1.2"
             textSize = 24f
             setTextColor(Color.WHITE)
         }
@@ -320,8 +320,8 @@ class MainActivity : Activity() {
                     .order(ByteOrder.LITTLE_ENDIAN).long
 
                 val out = StringBuilder()
-                out.append("VISUALIZADOR XCI v1.1\n")
-                out.append("ARCEUS NATIVE ENGINE v1.1\n")
+                out.append("VISUALIZADOR XCI v1.2\n")
+                out.append("ARCEUS NATIVE ENGINE v1.2\n")
                 out.append("XCI reconhecida\n")
                 out.append("Tamanho: %.2f GiB\n\n".format(
                     total.toDouble() / (1024.0 * 1024 * 1024)
@@ -442,6 +442,75 @@ class MainActivity : Activity() {
                                 if (recognized) "$plain (legivel)\n"
                                 else "$hex (criptografado ou desconhecido)\n"
                             )
+
+                            out.append("  DIAGNOSTICO NCA v1.2\n")
+
+                            val headerBytes = readAt(absolute, 0x400)
+                            val digest = java.security.MessageDigest
+                                .getInstance("SHA-256")
+                                .digest(headerBytes)
+                                .joinToString("") {
+                                    "%02x".format(it.toInt() and 255)
+                                }
+
+                            out.append(
+                                "  SHA256 cabecalho: $digest\n"
+                            )
+                            out.append(
+                                "  Tamanho real: $size bytes\n"
+                            )
+
+                            if (recognized) {
+                                val nca = ByteBuffer.wrap(headerBytes)
+                                    .order(ByteOrder.LITTLE_ENDIAN)
+
+                                val contentType =
+                                    headerBytes[0x205].toInt() and 255
+                                val cryptoType =
+                                    headerBytes[0x206].toInt() and 255
+                                val titleId = nca.getLong(0x210)
+                                val declaredSize = nca.getLong(0x208)
+
+                                val typeName = when (contentType) {
+                                    0 -> "Program"
+                                    1 -> "Meta"
+                                    2 -> "Control"
+                                    3 -> "Manual"
+                                    4 -> "Data"
+                                    5 -> "PublicData"
+                                    else -> "Desconhecido"
+                                }
+
+                                val idHex = java.lang.Long
+                                    .toUnsignedString(titleId, 16)
+                                    .padStart(16, '0')
+                                    .uppercase(java.util.Locale.US)
+
+                                out.append(
+                                    "  Tipo NCA: $typeName\n"
+                                )
+                                out.append(
+                                    "  Title ID: $idHex\n"
+                                )
+                                out.append(
+                                    "  Crypto type: $cryptoType\n"
+                                )
+                                out.append(
+                                    "  Tamanho declarado: $declaredSize\n"
+                                )
+
+                                if (declaredSize != size) {
+                                    out.append(
+                                        "  Aviso: tamanhos diferentes\n"
+                                    )
+                                }
+                            } else {
+                                out.append(
+                                    "  Cabecalho nao legivel. " +
+                                    "Metadados internos indisponiveis " +
+                                    "sem descriptografia.\n"
+                                )
+                            }
                         }
 
                         if (shown < 80) {
