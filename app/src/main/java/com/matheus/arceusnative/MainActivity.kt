@@ -7,6 +7,9 @@ import android.net.Uri
 import android.graphics.Color
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Movie
+import android.graphics.Canvas
+import android.os.SystemClock
 import android.widget.ImageView
 import android.view.View
 import android.widget.Button
@@ -27,6 +30,62 @@ class MainActivity : Activity() {
     external fun nativeTriangleTest(surface: android.view.Surface): String
     private lateinit var status: TextView
     private lateinit var logoView: ImageView
+    private lateinit var gifView: XciGifView
+    @Volatile private var extractedMovie: Movie? = null
+
+    private class XciGifView(context: android.content.Context) :
+        View(context) {
+        private var movie: Movie? = null
+        private var started = 0L
+
+        fun show(movieToPlay: Movie) {
+            movie = movieToPlay
+            started = SystemClock.uptimeMillis()
+            visibility = VISIBLE
+            requestLayout()
+            invalidate()
+        }
+
+        fun clear() {
+            movie = null
+            visibility = GONE
+        }
+
+        override fun onMeasure(widthSpec: Int, heightSpec: Int) {
+            val width = MeasureSpec.getSize(widthSpec)
+            val m = movie
+            val height = if (m != null && m.width() > 0) {
+                (width.toFloat() * m.height() / m.width())
+                    .toInt().coerceIn(1, 700)
+            } else 1
+            setMeasuredDimension(width, height)
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val m = movie ?: return
+            if (m.width() <= 0 || m.height() <= 0) return
+
+            canvas.drawColor(Color.BLACK)
+            val duration = if (m.duration() > 0) m.duration() else 1000
+            val elapsed = SystemClock.uptimeMillis() - started
+            m.setTime((elapsed % duration).toInt())
+
+            val scale = minOf(
+                width.toFloat() / m.width(),
+                height.toFloat() / m.height()
+            )
+            canvas.save()
+            canvas.translate(
+                (width - m.width() * scale) / 2f,
+                (height - m.height() * scale) / 2f
+            )
+            canvas.scale(scale, scale)
+            m.draw(canvas, 0f, 0f)
+            canvas.restore()
+            postInvalidateDelayed(33)
+        }
+    }
     @Volatile private var extractedLogo: Bitmap? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,7 +95,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(15, 20, 31))
         }
         val title = TextView(this).apply {
-            text = "Arceus Native Engine v1.0"
+            text = "Arceus Native Engine v1.1"
             textSize = 24f
             setTextColor(Color.WHITE)
         }
@@ -198,6 +257,9 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.BLACK)
         }
         layout.addView(logoView, LinearLayout.LayoutParams(-1, -2))
+        gifView = XciGifView(this)
+        gifView.visibility = View.GONE
+        layout.addView(gifView, LinearLayout.LayoutParams(-1, -2))
         layout.addView(status)
         setContentView(ScrollView(this).apply { addView(layout) })
     }
@@ -207,6 +269,8 @@ class MainActivity : Activity() {
         if (requestCode == 100 && resultCode == RESULT_OK && data?.data != null) {
             val uri = data.data!!
             extractedLogo = null
+            extractedMovie = null
+            gifView.clear()
             logoView.setImageDrawable(null)
             logoView.visibility = View.GONE
             status.text = "Lendo XCI e procurando NintendoLogo.png..." 
@@ -219,6 +283,7 @@ class MainActivity : Activity() {
                         logoView.setImageBitmap(bitmap)
                         logoView.visibility = View.VISIBLE
                     }
+                    extractedMovie?.let { gifView.show(it) }
                 }
             }.start()
         }
@@ -255,8 +320,8 @@ class MainActivity : Activity() {
                     .order(ByteOrder.LITTLE_ENDIAN).long
 
                 val out = StringBuilder()
-                out.append("VISUALIZADOR XCI v1.0\\n")
-                out.append("ARCEUS NATIVE ENGINE v0.8 - HFS0 FIX 2\n")
+                out.append("VISUALIZADOR XCI v1.1\n")
+                out.append("ARCEUS NATIVE ENGINE v1.1\n")
                 out.append("XCI reconhecida\n")
                 out.append("Tamanho: %.2f GiB\n\n".format(
                     total.toDouble() / (1024.0 * 1024 * 1024)
@@ -320,16 +385,42 @@ class MainActivity : Activity() {
                                 if (bitmap != null) {
                                     extractedLogo = bitmap
                                     out.append(
-                                        "NintendoLogo.png: IMAGEM CARREGADA!\\n"
+                                        "NintendoLogo.png: IMAGEM CARREGADA!\n"
                                     )
                                 } else {
                                     out.append(
-                                        "NintendoLogo.png: formato nao reconhecido\\n"
+                                        "NintendoLogo.png: formato nao reconhecido\n"
                                     )
                                 }
                             } else {
                                 out.append(
-                                    "NintendoLogo.png: tamanho invalido\\n"
+                                    "NintendoLogo.png: tamanho invalido\n"
+                                )
+                            }
+                        }
+
+                        if (label == "logo" &&
+                            name == "StartupMovie.gif") {
+                            if (size in 1L..2097152L) {
+                                val bytes = readAt(absolute, size.toInt())
+                                val movie = Movie.decodeByteArray(
+                                    bytes, 0, bytes.size
+                                )
+                                if (movie != null &&
+                                    movie.width() > 0 &&
+                                    movie.height() > 0) {
+                                    extractedMovie = movie
+                                    out.append(
+                                        "StartupMovie.gif: ANIMACAO CARREGADA!\n"
+                                    )
+                                } else {
+                                    out.append(
+                                        "StartupMovie.gif: falha na leitura\n"
+                                    )
+                                }
+                            } else {
+                                out.append(
+                                    "StartupMovie.gif: tamanho invalido\n"
                                 )
                             }
                         }
