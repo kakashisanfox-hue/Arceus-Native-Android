@@ -19,6 +19,7 @@ class MainActivity : Activity() {
     external fun nativeDiagnostics(): String
     external fun nativeGpuTest(): String
     external fun nativeRenderSurface(surface: android.view.Surface): String
+    external fun nativeAnimationTest(surface: android.view.Surface): String
     private lateinit var status: TextView
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -28,7 +29,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(15, 20, 31))
         }
         val title = TextView(this).apply {
-            text = "Arceus Native Engine v0.5"
+            text = "Arceus Native Engine v0.6"
             textSize = 24f
             setTextColor(Color.WHITE)
         }
@@ -89,6 +90,41 @@ class MainActivity : Activity() {
                 })
             }
         }
+        val animate = Button(this).apply {
+            text = "Testar animacao Vulkan (30 quadros)"
+            setOnClickListener {
+                val screen = SurfaceView(this@MainActivity)
+                val resultText = TextView(this@MainActivity).apply {
+                    text = "Testando animacao..."
+                    textSize = 16f
+                    setTextColor(Color.WHITE)
+                    setPadding(24, 24, 24, 24)
+                }
+                val close = Button(this@MainActivity).apply {
+                    text = "Voltar ao motor"
+                    setOnClickListener { recreate() }
+                }
+                val scene = LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setBackgroundColor(Color.rgb(15, 20, 31))
+                    addView(screen, LinearLayout.LayoutParams(-1, 0, 1f))
+                    addView(resultText)
+                    addView(close)
+                }
+                setContentView(scene)
+                screen.holder.addCallback(object : SurfaceHolder.Callback {
+                    override fun surfaceCreated(holder: SurfaceHolder) {
+                        Thread {
+                            val report = try { nativeAnimationTest(holder.surface) }
+                                catch (e: Throwable) { "Erro: ${e.message}" }
+                            runOnUiThread { resultText.text = report }
+                        }.start()
+                    }
+                    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+                    override fun surfaceDestroyed(holder: SurfaceHolder) {}
+                })
+            }
+        }
         val choose = Button(this).apply {
             text = "Selecionar XCI"
             setOnClickListener {
@@ -109,6 +145,7 @@ class MainActivity : Activity() {
         layout.addView(test)
         layout.addView(gpuTest)
         layout.addView(render)
+        layout.addView(animate)
         layout.addView(choose)
         layout.addView(driver)
         layout.addView(status)

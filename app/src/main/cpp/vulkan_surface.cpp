@@ -6,8 +6,10 @@
 #include <string>
 #include <sstream>
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 
-static std::string renderOnce(JNIEnv* env, jobject surface) {
+static std::string renderOnce(JNIEnv* env, jobject surface, float phase) {
     ANativeWindow* window = ANativeWindow_fromSurface(env, surface);
     if (!window) return "Falha: superficie Android indisponivel";
     VkInstance instance = VK_NULL_HANDLE;
@@ -159,7 +161,7 @@ static std::string renderOnce(JNIEnv* env, jobject surface) {
         toTransfer.subresourceRange.levelCount = 1; toTransfer.subresourceRange.layerCount = 1;
         vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &toTransfer);
         VkClearColorValue color{};
-        color.float32[0] = 0.08f; color.float32[1] = 0.45f; color.float32[2] = 0.78f; color.float32[3] = 1.0f;
+        color.float32[0] = 0.12f + 0.30f * (0.5f + 0.5f * std::sin(phase)); color.float32[1] = 0.20f + 0.45f * (0.5f + 0.5f * std::sin(phase + 2.09f)); color.float32[2] = 0.25f + 0.65f * (0.5f + 0.5f * std::sin(phase + 4.18f)); color.float32[3] = 1.0f;
         VkImageSubresourceRange range{};
         range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; range.levelCount = 1; range.layerCount = 1;
         vkCmdClearColorImage(command, images[imageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &range);
@@ -214,6 +216,26 @@ static std::string renderOnce(JNIEnv* env, jobject surface) {
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_matheus_arceusnative_MainActivity_nativeRenderSurface(JNIEnv* env, jobject, jobject surface) {
-    const std::string report = renderOnce(env, surface);
+    const std::string report = renderOnce(env, surface, 0.0f);
     return env->NewStringUTF(report.c_str());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_matheus_arceusnative_MainActivity_nativeAnimationTest(JNIEnv* env, jobject, jobject surface) {
+    const auto start = std::chrono::steady_clock::now();
+    std::string last;
+    int frames = 0;
+    for (int i = 0; i < 30; ++i) {
+        last = renderOnce(env, surface, i * 0.22f);
+        if (last.find("Vulkan na tela: OK") == std::string::npos) break;
+        ++frames;
+    }
+    const auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    std::ostringstream out;
+    out << "Animacao Vulkan experimental\n";
+    out << "Quadros apresentados: " << frames << "/30\n";
+    out << "Tempo: " << elapsed << " s\n";
+    if (elapsed > 0) out << "Taxa media (inclui recriacao Vulkan): " << (frames / elapsed) << " FPS\n";
+    out << "Nota: teste de cores, nao renderizacao 3D.\n" << last;
+    return env->NewStringUTF(out.str().c_str());
 }

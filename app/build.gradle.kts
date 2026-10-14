@@ -6,8 +6,8 @@ android {
         applicationId = "com.matheus.arceusnative"
         minSdk = 26
         targetSdk = 28
-        versionCode = 5
-        versionName = "0.5"
+        versionCode = 6
+        versionName = "0.6"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt") } }
