@@ -49,9 +49,29 @@ static std::string runGpuTest() {
         vkGetPhysicalDeviceQueueFamilyProperties(physical, &familyCount, families);
         uint32_t family = UINT32_MAX;
         for (uint32_t i = 0; i < familyCount; ++i) {
-            if ((families[i].queueFlags & VK_QUEUE_TRANSFER_BIT) && families[i].queueCount) { family = i; break; }
+            log << "Fila " << i << ": flags=" << families[i].queueFlags
+                << ", quantidade=" << families[i].queueCount << "\n";
+            if (families[i].queueCount &&
+                (families[i].queueFlags & VK_QUEUE_TRANSFER_BIT)) {
+                family = i;
+                break;
+            }
         }
-        if (family == UINT32_MAX) { stage = "sem fila de transferencia"; result = VK_ERROR_INITIALIZATION_FAILED; break; }
+        if (family == UINT32_MAX) {
+            for (uint32_t i = 0; i < familyCount; ++i) {
+                if (families[i].queueCount &&
+                    (families[i].queueFlags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT))) {
+                    family = i;
+                    break;
+                }
+            }
+        }
+        if (family == UINT32_MAX) {
+            stage = "sem fila Vulkan compativel";
+            result = VK_ERROR_INITIALIZATION_FAILED;
+            break;
+        }
+        log << "Fila selecionada: " << family << "\n";
         float priority = 1.0f;
         VkDeviceQueueCreateInfo qci{};
         qci.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
