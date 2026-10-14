@@ -16,7 +16,7 @@ object RelocationInspector {
             val b = ByteBuffer.wrap(memory)
                 .order(ByteOrder.LITTLE_ENDIAN)
 
-            val mod = 4L + b.getInt(4).toLong()
+            val mod = b.getInt(4).toLong()
             if (!valid(memory.size, mod, 28L))
                 return out.append("MOD0 invalido.\n").toString()
 
