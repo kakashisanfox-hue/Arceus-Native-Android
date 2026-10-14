@@ -5,6 +5,10 @@ import android.os.Bundle
 import android.content.Intent
 import android.net.Uri
 import android.graphics.Color
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.widget.ImageView
+import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -22,6 +26,8 @@ class MainActivity : Activity() {
     external fun nativeAnimationTest(surface: android.view.Surface): String
     external fun nativeTriangleTest(surface: android.view.Surface): String
     private lateinit var status: TextView
+    private lateinit var logoView: ImageView
+    @Volatile private var extractedLogo: Bitmap? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val layout = LinearLayout(this).apply {
@@ -30,7 +36,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(15, 20, 31))
         }
         val title = TextView(this).apply {
-            text = "Arceus Native Engine v0.9"
+            text = "Arceus Native Engine v1.0"
             textSize = 24f
             setTextColor(Color.WHITE)
         }
@@ -185,6 +191,13 @@ class MainActivity : Activity() {
         layout.addView(triangle)
         layout.addView(choose)
         layout.addView(driver)
+        logoView = ImageView(this).apply {
+            visibility = View.GONE
+            adjustViewBounds = true
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setBackgroundColor(Color.BLACK)
+        }
+        layout.addView(logoView, LinearLayout.LayoutParams(-1, -2))
         layout.addView(status)
         setContentView(ScrollView(this).apply { addView(layout) })
     }
@@ -193,10 +206,20 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 100 && resultCode == RESULT_OK && data?.data != null) {
             val uri = data.data!!
-            status.text = "Analisando cabecalho..."
+            extractedLogo = null
+            logoView.setImageDrawable(null)
+            logoView.visibility = View.GONE
+            status.text = "Lendo XCI e procurando NintendoLogo.png..." 
             Thread {
                 val result = try { inspect(uri) } catch (e: Exception) { "Erro: ${e.message}" }
-                runOnUiThread { status.text = result }
+                runOnUiThread {
+                    status.text = result
+                    val bitmap = extractedLogo
+                    if (bitmap != null) {
+                        logoView.setImageBitmap(bitmap)
+                        logoView.visibility = View.VISIBLE
+                    }
+                }
             }.start()
         }
     }
@@ -232,6 +255,7 @@ class MainActivity : Activity() {
                     .order(ByteOrder.LITTLE_ENDIAN).long
 
                 val out = StringBuilder()
+                out.append("VISUALIZADOR XCI v1.0\\n")
                 out.append("ARCEUS NATIVE ENGINE v0.8 - HFS0 FIX 2\n")
                 out.append("XCI reconhecida\n")
                 out.append("Tamanho: %.2f GiB\n\n".format(
@@ -285,6 +309,30 @@ class MainActivity : Activity() {
                         if (absolute < dataStart ||
                             absolute > total ||
                             size > total - absolute) continue
+
+                        if (label == "logo" &&
+                            name == "NintendoLogo.png") {
+                            if (size in 1L..2097152L) {
+                                val png = readAt(absolute, size.toInt())
+                                val bitmap = BitmapFactory.decodeByteArray(
+                                    png, 0, png.size
+                                )
+                                if (bitmap != null) {
+                                    extractedLogo = bitmap
+                                    out.append(
+                                        "NintendoLogo.png: IMAGEM CARREGADA!\\n"
+                                    )
+                                } else {
+                                    out.append(
+                                        "NintendoLogo.png: formato nao reconhecido\\n"
+                                    )
+                                }
+                            } else {
+                                out.append(
+                                    "NintendoLogo.png: tamanho invalido\\n"
+                                )
+                            }
+                        }
 
                         if (label == "secure" &&
                             name.endsWith(".nca") && size >= 0x400L) {
