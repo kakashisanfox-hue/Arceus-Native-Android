@@ -30,6 +30,8 @@ class MainActivity : Activity() {
     external fun nativeTriangleTest(surface: android.view.Surface): String
     // NCA_KEYS_V13: chave mantida apenas na memoria do processo.
     @Volatile private var ncaHeaderKey: ByteArray? = null
+    @Volatile private var keyAreaKeys: Map<String, ByteArray> =
+        emptyMap()
     private lateinit var status: TextView
     private lateinit var logoView: ImageView
     private lateinit var gifView: XciGifView
@@ -97,7 +99,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(15, 20, 31))
         }
         val title = TextView(this).apply {
-            text = "Arceus Native Engine v2.0 Experimental"
+            text = "Arceus Native Engine v2.1 Experimental"
             textSize = 24f
             setTextColor(Color.WHITE)
         }
@@ -299,14 +301,18 @@ class MainActivity : Activity() {
                             buffer.toByteArray()
                         } ?: throw Exception("Nao foi possivel abrir o arquivo")
 
+                    val keyText = String(bytes, Charsets.UTF_8)
                     val parsed = NcaHeaderCrypto.parseHeaderKey(
-                        String(bytes, Charsets.UTF_8)
+                        keyText
                     )
+                    val areaKeys = ExefsProbe.parseKeys(keyText)
                     bytes.fill(0)
 
                     if (parsed != null) {
                         ncaHeaderKey?.fill(0)
                         ncaHeaderKey = parsed
+                        keyAreaKeys.values.forEach { it.fill(0) }
+                        keyAreaKeys = areaKeys
                         "prod.keys importado localmente!\n" +
                         "header_key encontrada (256 bits).\n" +
                         "Nenhuma chave enviada ao GitHub.\n\n" +
@@ -314,6 +320,8 @@ class MainActivity : Activity() {
                     } else {
                         ncaHeaderKey?.fill(0)
                         ncaHeaderKey = null
+                        keyAreaKeys.values.forEach { it.fill(0) }
+                        keyAreaKeys = emptyMap()
                         "Arquivo aberto, mas header_key valida nao encontrada.\n" +
                         "Necessaria linha header_key com 64 caracteres hexadecimais."
                     }
@@ -378,8 +386,8 @@ class MainActivity : Activity() {
                     .order(ByteOrder.LITTLE_ENDIAN).long
 
                 val out = StringBuilder()
-                out.append("VISUALIZADOR XCI v2.0\n")
-                out.append("ARCEUS NATIVE ENGINE v2.0\n")
+                out.append("VISUALIZADOR XCI v2.1\n")
+                out.append("ARCEUS NATIVE ENGINE v2.1\n")
                 out.append("XCI reconhecida\n")
                 out.append("Tamanho: %.2f GiB\n\n".format(
                     total.toDouble() / (1024.0 * 1024 * 1024)
@@ -519,6 +527,22 @@ class MainActivity : Activity() {
                                             decoded, size, name
                                         )
                                     )
+                                    if (decoded[0x205].toInt() == 0 &&
+                                        String(
+                                            decoded, 0x200, 4,
+                                            Charsets.US_ASCII
+                                        ) == "NCA3") {
+                                        out.append(
+                                            ExefsProbe.probe(
+                                                decoded,
+                                                size,
+                                                absolute,
+                                                keyAreaKeys
+                                            ) { position, length ->
+                                                readAt(position, length)
+                                            }
+                                        )
+                                    }
                                     decoded.fill(0)
                                     raw.fill(0)
                                 } catch (e: Exception) {
