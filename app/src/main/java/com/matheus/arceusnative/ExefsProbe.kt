@@ -86,7 +86,7 @@ object ExefsProbe {
         readAt: (Long, Int) -> ByteArray
     ): String {
         val out = StringBuilder()
-        out.append("\n===== EXEFS v2.1 =====\n")
+        out.append("\n===== EXEFS v2.2 =====\n")
 
         try {
             val b = ByteBuffer.wrap(header)
@@ -272,6 +272,62 @@ object ExefsProbe {
                         out.append(
                             "Arquivo: $name ($fileSize bytes)\n"
                         )
+
+                        // NSO_REAL_V22
+                        if (name in listOf(
+                                "main", "rtld", "sdk",
+                                "subsdk0", "subsdk1"
+                            ) && fileSize >= 0x100L) {
+                            try {
+                                val nsoOffset =
+                                    pfsNcaOffset +
+                                    dataStart + fileOff
+
+                                val alignedNso =
+                                    nsoOffset and -16L
+                                val skipNso =
+                                    (nsoOffset - alignedNso).toInt()
+
+                                val encryptedNso = readAt(
+                                    ncaAbsolute + alignedNso,
+                                    0x100 + 16
+                                )
+
+                                val decryptedNso = decryptCtr(
+                                    encryptedNso,
+                                    contentKey,
+                                    header.copyOfRange(
+                                        fsBase, fsBase + 0x200
+                                    ),
+                                    alignedNso
+                                )
+
+                                val nsoHeader =
+                                    decryptedNso.copyOfRange(
+                                        skipNso,
+                                        skipNso + 0x100
+                                    )
+
+                                out.append(
+                                    "\n===== NSO REAL v2.2: $name =====\n"
+                                )
+                                out.append(
+                                    NsoInspector.inspectHeader(
+                                        nsoHeader
+                                    )
+                                )
+                                out.append("\n")
+
+                                nsoHeader.fill(0)
+                                decryptedNso.fill(0)
+                                encryptedNso.fill(0)
+                            } catch (e: Exception) {
+                                out.append(
+                                    "NSO $name: erro ${e.message}\n"
+                                )
+                            }
+                        }
+
                     }
                 }
 
