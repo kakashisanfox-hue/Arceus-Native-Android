@@ -86,7 +86,7 @@ object ExefsProbe {
         readAt: (Long, Int) -> ByteArray
     ): String {
         val out = StringBuilder()
-        out.append("\n===== EXEFS v3.1 =====\n")
+        out.append("\n===== EXEFS v3.2 =====\n")
 
         try {
             val b = ByteBuffer.wrap(header)

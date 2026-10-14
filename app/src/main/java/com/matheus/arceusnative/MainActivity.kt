@@ -99,7 +99,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(15, 20, 31))
         }
         val title = TextView(this).apply {
-            text = "Arceus Native Engine v3.1 Experimental"
+            text = "Arceus Native Engine v3.2 Experimental"
             textSize = 24f
             setTextColor(Color.WHITE)
         }

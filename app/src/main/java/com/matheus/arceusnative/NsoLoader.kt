@@ -139,6 +139,8 @@ object NsoLoader {
                 log.append("MONTAGEM CONCLUIDA: 3/3 segmentos\n")
                 // MOD0_INSPECT_V31
                 log.append(Mod0Inspector.inspect(memory, name))
+                // RELOC_V32
+                log.append(RelocationInspector.apply(memory, name))
                 log.append("Relocacao, HLE e execucao ARM64 ainda pendentes.\n")
             } finally { memory.fill(0) }
         } catch (e: Exception) {
