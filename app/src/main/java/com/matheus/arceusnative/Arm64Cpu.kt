@@ -3,241 +3,192 @@ package com.matheus.arceusnative
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
+/** Interpretador AArch64 de diagnostico, sem executar codigo do jogo. */
 object Arm64Cpu {
-    private const val RAM_SIZE = 4096
-    private const val MAX_STEPS = 1000
+    private const val R = 1
+    private const val W = 2
+    private const val X = 4
+    private const val LIMIT = 10000
+    private const val BASE = 0x10000L
 
-    private class Cpu(val ram: ByteBuffer) {
-        val x = LongArray(31)
-        var sp = RAM_SIZE.toLong()
-        var pc = 0L
-        var steps = 0
-        var halted = false
-        var svc: Int? = null
-        var branches = 0
+    private class Region(val start: Long, val bytes: ByteArray, val perms: Int) {
+        fun contains(address: Long, size: Int): Boolean =
+            address >= start && size >= 0 &&
+            address - start <= bytes.size.toLong() - size
+    }
 
-        fun reg(n: Int): Long =
-            if (n == 31) 0L else x[n]
-
-        fun write(n: Int, v: Long) {
-            if (n != 31) x[n] = v
+    private class Memory {
+        val regions = ArrayList<Region>()
+        fun map(start: Long, size: Int, permissions: Int): Region {
+            require(start >= 0 && size > 0 && size <= 1024 * 1024)
+            require(start % 4096 == 0L && size % 4096 == 0)
+            require(permissions in 1..7)
+            require(start <= Long.MAX_VALUE - size)
+            require(regions.none { start < it.start + it.bytes.size && it.start < start + size })
+            return Region(start, ByteArray(size), permissions).also { regions.add(it) }
         }
-
-        fun base(n: Int): Long =
-            if (n == 31) sp else x[n]
-
-        fun check(at: Long, size: Int) {
-            require(at >= 0 &&
-                at <= RAM_SIZE.toLong() - size) {
-                "Acesso invalido: 0x${at.toString(16)}"
+        private fun locate(address: Long, size: Int, permission: Int): Pair<Region, Int> {
+            val region = regions.firstOrNull { it.contains(address, size) }
+                ?: error("Unmapped memory: 0x${address.toString(16)}")
+            require(region.perms and permission != 0) {
+                "Permission denied: 0x${address.toString(16)}"
             }
+            return region to (address - region.start).toInt()
         }
+        fun get32(address: Long, permission: Int = R): Int {
+            val (region, off) = locate(address, 4, permission)
+            return ByteBuffer.wrap(region.bytes).order(ByteOrder.LITTLE_ENDIAN).getInt(off)
+        }
+        fun get64(address: Long): Long {
+            val (region, off) = locate(address, 8, R)
+            return ByteBuffer.wrap(region.bytes).order(ByteOrder.LITTLE_ENDIAN).getLong(off)
+        }
+        fun put64(address: Long, value: Long) {
+            val (region, off) = locate(address, 8, W)
+            ByteBuffer.wrap(region.bytes).order(ByteOrder.LITTLE_ENDIAN).putLong(off, value)
+        }
+        fun loadCode(region: Region, ops: IntArray) {
+            require(region.perms and X != 0 && ops.size * 4 <= region.bytes.size)
+            val b = ByteBuffer.wrap(region.bytes).order(ByteOrder.LITTLE_ENDIAN)
+            ops.forEach { b.putInt(it) }
+        }
+    }
 
-        fun sign(v: Long, bits: Int): Long =
-            (v shl (64 - bits)) shr (64 - bits)
-
-        fun run(codeEnd: Int) {
-            while (!halted && steps < MAX_STEPS) {
-                check(pc, 4)
-                require(pc % 4 == 0L && pc < codeEnd) {
-                    "PC fora do codigo"
-                }
-                val current = pc
-                val op = ram.getInt(pc.toInt())
+    private class Cpu(val memory: Memory, val start: Long) {
+        val x = LongArray(31)
+        var sp = 0L
+        var pc = start
+        var steps = 0
+        var branches = 0
+        var svc: Int? = null
+        var stopped = false
+        private fun reg(n: Int) = if (n == 31) 0L else x[n]
+        private fun source(n: Int) = if (n == 31) sp else x[n]
+        private fun dest(n: Int, value: Long, useSp: Boolean = false) {
+            if (n == 31) { if (useSp) sp = value } else x[n] = value
+        }
+        private fun signed(value: Long, bits: Int) = (value shl (64 - bits)) shr (64 - bits)
+        fun run() {
+            while (!stopped && steps < LIMIT) {
+                require(pc % 4L == 0L) { "Unaligned PC" }
+                val here = pc
+                val op = memory.get32(pc, X)
                 val u = op.toLong() and 0xffffffffL
                 val rd = op and 31
                 val rn = (op ushr 5) and 31
                 pc += 4
                 steps++
-
                 when {
-                    (u and 0xFF800000L) ==
-                        0xD2800000L -> {
+                    u == 0xD503201FL -> Unit // NOP
+                    (u and 0xFF800000L) == 0xD2800000L -> {
                         val imm = (op ushr 5) and 65535
                         val shift = ((op ushr 21) and 3) * 16
-                        write(rd, imm.toLong() shl shift)
+                        dest(rd, imm.toLong() shl shift)
                     }
-
-                    (u and 0xFF200000L) ==
-                        0x8B000000L ||
-                    (u and 0xFF200000L) ==
-                        0xCB000000L -> {
-                        val rm = (op ushr 16) and 31
-                        val shiftType = (op ushr 22) and 3
-                        val amount = (op ushr 10) and 63
-                        require(shiftType == 0) {
-                            "Shift nao suportado"
-                        }
-                        val rhs = reg(rm) shl amount
+                    (u and 0xFF000000L) == 0x91000000L ||
+                    (u and 0xFF000000L) == 0xD1000000L -> {
+                        val imm = ((op ushr 10) and 4095).toLong() shl
+                            (if ((op ushr 22) and 1 != 0) 12 else 0)
                         val sub = (u and 0x40000000L) != 0L
-                        write(
-                            rd,
-                            if (sub) reg(rn) - rhs
-                            else reg(rn) + rhs
-                        )
+                        dest(rd, if (sub) source(rn) - imm else source(rn) + imm, true)
                     }
-
-                    // LDR/STR Xt, [Xn|SP, #imm12*8]
-                    (u and 0xFFC00000L) ==
-                        0xF9400000L ||
-                    (u and 0xFFC00000L) ==
-                        0xF9000000L -> {
-                        val offset =
-                            ((op ushr 10) and 4095) * 8L
-                        val addr = base(rn) + offset
-                        check(addr, 8)
-                        require(addr % 8 == 0L) {
-                            "Acesso desalinhado"
-                        }
-                        if ((u and 0x00400000L) != 0L)
-                            write(rd, ram.getLong(addr.toInt()))
-                        else
-                            ram.putLong(addr.toInt(), reg(rd))
+                    (u and 0xFF200000L) == 0x8B000000L ||
+                    (u and 0xFF200000L) == 0xCB000000L -> {
+                        require((op ushr 22) and 3 == 0) { "Shift not implemented" }
+                        val rm = (op ushr 16) and 31
+                        val rhs = reg(rm) shl ((op ushr 10) and 63)
+                        val sub = (u and 0x40000000L) != 0L
+                        dest(rd, if (sub) reg(rn) - rhs else reg(rn) + rhs)
                     }
-
-                    // B / BL
-                    (u and 0xFC000000L) ==
-                        0x14000000L ||
-                    (u and 0xFC000000L) ==
-                        0x94000000L -> {
-                        val off = sign(
-                            (u and 0x03FFFFFFL) shl 2, 28
-                        )
-                        if ((u and 0x80000000L) != 0L)
-                            x[30] = pc
-                        pc = current + off
+                    (u and 0xFFC00000L) == 0xF9400000L ||
+                    (u and 0xFFC00000L) == 0xF9000000L -> {
+                        val address = source(rn) + ((op ushr 10) and 4095) * 8L
+                        if ((u and 0x00400000L) != 0L) dest(rd, memory.get64(address))
+                        else memory.put64(address, reg(rd))
+                    }
+                    (u and 0xFC000000L) == 0x14000000L ||
+                    (u and 0xFC000000L) == 0x94000000L -> {
+                        val delta = signed((u and 0x3ffffffL) shl 2, 28)
+                        if ((u and 0x80000000L) != 0L) x[30] = pc
+                        pc = here + delta
                         branches++
                     }
-
-                    // CBZ / CBNZ (64-bit)
-                    (u and 0x7E000000L) ==
-                        0x34000000L -> {
-                        val off = sign(
-                            ((u ushr 5) and 0x7FFFFL) shl 2,
-                            21
-                        )
-                        val is64 =
-                            (u and 0x80000000L) != 0L
-                        val value = if (is64) reg(rd)
-                            else reg(rd) and 0xffffffffL
-                        val nonzero =
-                            (u and 0x01000000L) != 0L
-                        if ((value != 0L) == nonzero) {
-                            pc = current + off
-                            branches++
-                        }
+                    (u and 0x7E000000L) == 0x34000000L -> {
+                        val delta = signed(((u ushr 5) and 0x7ffffL) shl 2, 21)
+                        val value = if (u and 0x80000000L != 0L) reg(rd) else reg(rd) and 0xffffffffL
+                        val nonzero = u and 0x01000000L != 0L
+                        if ((value != 0L) == nonzero) { pc = here + delta; branches++ }
                     }
-
-                    // RET Xn
-                    (u and 0xFFFFFC1FL) ==
-                        0xD65F0000L -> {
+                    (u and 0xFFFFFC1FL) == 0xD65F0000L -> {
                         val target = reg(rn)
-                        if (target == 0L)
-                            halted = true
-                        else
-                            pc = target
+                        if (target == 0L) stopped = true else { pc = target; branches++ }
                     }
-
-                    // SVC #imm16: detectar, nao executar syscall
-                    (u and 0xFFE0001FL) ==
-                        0xD4000001L -> {
+                    (u and 0xFFFFFC1FL) == 0xD61F0000L ||
+                    (u and 0xFFFFFC1FL) == 0xD63F0000L -> {
+                        if (u and 0x00200000L != 0L) x[30] = pc
+                        pc = reg(rn)
+                        branches++
+                    }
+                    (u and 0xFFE0001FL) == 0xD4000001L -> {
                         svc = (op ushr 5) and 65535
-                        halted = true
+                        stopped = true
                     }
-
-                    else -> error(
-                        "Opcode nao suportado: " +
-                        "0x${u.toString(16)}"
-                    )
+                    else -> error("Unsupported opcode: 0x${u.toString(16)} at 0x${here.toString(16)}")
                 }
             }
-            require(steps < MAX_STEPS) {
-                "Limite de instrucoes atingido"
-            }
+            require(steps < LIMIT) { "Instruction budget exhausted" }
         }
     }
 
     fun selfTest(): String {
-        val out = StringBuilder(
-            "\n===== ARM64 CPU v4.1 =====\n"
-        )
+        val out = StringBuilder("\n===== ARM64 CPU v4.2 =====\n")
         try {
-            val ram = ByteBuffer.allocate(RAM_SIZE)
-                .order(ByteOrder.LITTLE_ENDIAN)
-
-            // X0=5, X1=7, X2=12
-            // STR/LDR via SP, SUB, CBNZ,
-            // B, BL, RET e SVC.
+            val memory = Memory()
+            val code = memory.map(BASE, 4096, R or X)
+            memory.map(0x20000, 4096, R or W)
             val program = intArrayOf(
-                0xD28000A0.toInt(), // MOVZ X0,#5
-                0xD28000E1.toInt(), // MOVZ X1,#7
+                0xD28000A0.toInt(), // MOVZ X0,5
+                0xD28000E1.toInt(), // MOVZ X1,7
                 0x8B010002.toInt(), // ADD X2,X0,X1
-                0xD10043FF.toInt(), // SUB SP,SP,#16 (especial)
+                0xD10043FF.toInt(), // SUB SP,SP,16
                 0xF90003E2.toInt(), // STR X2,[SP]
                 0xF94003E3.toInt(), // LDR X3,[SP]
                 0xCB000064.toInt(), // SUB X4,X3,X0
                 0xB5000044.toInt(), // CBNZ X4,+8
-                0xD2800C65.toInt(), // MOVZ X5,#99 (pular)
-                0xD2800545.toInt(), // MOVZ X5,#42
+                0xD2800C65.toInt(), // skipped
+                0xD2800545.toInt(), // MOVZ X5,42
                 0x14000002.toInt(), // B +8
-                0xD2800C86.toInt(), // MOVZ X6,#100 (pular)
+                0xD2800C86.toInt(), // skipped
                 0x94000003.toInt(), // BL +12
-                0xD4000001.toInt(), // SVC #0
-                0xD503201F.toInt(), // NOP (nao alcançado)
-                0xD2800026.toInt(), // MOVZ X6,#1
+                0xD4000001.toInt(), // SVC 0
+                0xD503201F.toInt(), // NOP
+                0xD2800026.toInt(), // MOVZ X6,1
                 0xD65F03C0.toInt()  // RET X30
             )
-
-            // Ajuste de SP por instrucao ADD/SUB immediate
-            // e NOP adicionados abaixo no interpretador.
-            for (op in program) ram.putInt(op)
-
-            val cpu = Cpu(ram)
-            cpu.sp = 0x800L
-
-            // O programa de teste usa SP predefinido;
-            // pula a instrucao de ajuste de SP.
-            ram.putInt(3 * 4, 0xD503201F.toInt())
-
-            // Executar versao do interpretador com NOP.
-            // NOP e tratado pela substituicao por B +4.
-            ram.putInt(3 * 4, 0x14000001)
-
-            cpu.run(program.size * 4)
-
-            val ok =
-                cpu.x[0] == 5L &&
-                cpu.x[1] == 7L &&
-                cpu.x[2] == 12L &&
-                cpu.x[3] == 12L &&
-                cpu.x[4] == 7L &&
-                cpu.x[5] == 42L &&
-                cpu.x[6] == 1L &&
-                cpu.svc == 0 &&
-                ram.getLong(0x800) == 12L
-
-            out.append("X0=${cpu.x[0]}\n")
-            out.append("X1=${cpu.x[1]}\n")
-            out.append("X2=${cpu.x[2]}\n")
-            out.append("X3=${cpu.x[3]}\n")
-            out.append("X4=${cpu.x[4]}\n")
-            out.append("X5=${cpu.x[5]}\n")
-            out.append("X6=${cpu.x[6]}\n")
-            out.append("SP=0x${cpu.sp.toString(16)}\n")
-            out.append("Memoria[SP]=${ram.getLong(0x800)}\n")
-            out.append("Desvios=${cpu.branches}\n")
-            out.append("SVC detectado=${cpu.svc}\n")
-            out.append("Instrucoes=${cpu.steps}\n")
-            out.append(
-                if (ok) "ARM64 v4.1 SELF-TEST: SUCESSO!\n"
-                else "ARM64 v4.1 SELF-TEST: FALHOU\n"
-            )
+            memory.loadCode(code, program)
+            val cpu = Cpu(memory, BASE)
+            cpu.sp = 0x21000L
+            cpu.run()
+            val stack = memory.get64(0x20ff0)
+            val arithmetic = cpu.x[2] == 12L && cpu.x[3] == 12L && cpu.x[4] == 7L
+            val flow = cpu.x[5] == 42L && cpu.x[6] == 1L && cpu.svc == 0
+            val stackOk = cpu.sp == 0x20ff0L && stack == 12L
+            var denied = false
+            try { memory.put64(BASE, 99L) } catch (_: IllegalArgumentException) { denied = true }
+            var nx = false
+            try { memory.get32(0x20000L, X) } catch (_: IllegalArgumentException) { nx = true }
+            out.append("Aritmetica e registradores: ${if (arithmetic) "OK" else "FALHA"}\n")
+            out.append("Pilha e LDR/STR: ${if (stackOk) "OK" else "FALHA"}\n")
+            out.append("Desvios e SVC: ${if (flow) "OK" else "FALHA"}\n")
+            out.append("Codigo somente leitura: ${if (denied) "OK" else "FALHA"}\n")
+            out.append("Dados nao executaveis: ${if (nx) "OK" else "FALHA"}\n")
+            out.append("Instrucoes: ${cpu.steps}; desvios: ${cpu.branches}\n")
+            out.append(if (arithmetic && flow && stackOk && denied && nx)
+                "ARM64 v4.2 SELF-TEST: SUCESSO!\n" else "ARM64 v4.2 SELF-TEST: FALHOU\n")
         } catch (e: Exception) {
-            out.append("ARM64 ERRO: ${e.message}\n")
+            out.append("ARM64 v4.2 ERRO: ${e.message}\n")
         }
-        out.append(
-            "Teste sintetico; Pokemon nao executado.\n"
-        )
+        out.append("Somente teste sintetico; Pokemon nao executado.\n")
         return out.toString()
     }
 }
