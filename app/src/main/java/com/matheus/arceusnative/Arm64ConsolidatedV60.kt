@@ -310,7 +310,7 @@ object Arm64ConsolidatedV60 {
             )
             tests["3. MOVZ/MOVK"] =
                 movz == null && movk == null &&
-                c.get(0) == 5L
+                c.get(0) == 0x10005L
 
             val cmp = decodeAndApply(
                 0xf100141f.toInt(), c
