@@ -133,6 +133,18 @@ object ProcessMemory {
                 out.append("RTLD nao encontrado.\n")
             }
 
+            // REAL_ARM64_V44
+            if (rtld != null) {
+                val start =
+                    rtld.base + rtld.offsets[0]
+
+                out.append(
+                    RealArm64Probe.run(start) { address ->
+                        read32(address, true)
+                    }
+                )
+            }
+
             val ro = regions.firstOrNull {
                 it.name.endsWith(":RO") &&
                 it.size >= 4L
