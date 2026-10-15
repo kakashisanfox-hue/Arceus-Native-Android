@@ -165,6 +165,16 @@ object ProcessMemory {
                 )
             }
 
+            // AUDIT_V54
+            out.append(Arm64AuditV54.selfTest())
+            if (rtld != null) {
+                out.append(
+                    Arm64AuditV54.inspect(
+                        rtld.base + rtld.offsets[0]
+                    ) { addr -> read32(addr, true) }
+                )
+            }
+
             // INTEGRATED_V53
             out.append(Arm64IntegratedV53.selfTest())
 
