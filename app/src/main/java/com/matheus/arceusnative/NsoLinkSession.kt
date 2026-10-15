@@ -13,7 +13,13 @@ object NsoLinkSession {
 
     private data class Rel(val offset: Long, val info: Long, val addend: Long)
     private data class Sym(val name: String, val value: Long, val defined: Boolean, val weak: Boolean, val binding: Int)
-    private class Module(val name: String, val data: ByteArray) {
+    private class Module(
+        val name: String,
+        val data: ByteArray,
+        val offsets: LongArray,
+        val sizes: LongArray,
+        val bss: Long
+    ) {
         var base = 0L
         val rels = ArrayList<Rel>()
         val plt = ArrayList<Rel>()
@@ -34,9 +40,15 @@ object NsoLinkSession {
         for (m in modules) m.data.fill(0)
         modules.clear()
     }
-    @Synchronized fun capture(name: String, memory: ByteArray) {
+    @Synchronized fun capture(
+        name: String,
+        memory: ByteArray,
+        offsets: LongArray,
+        sizes: LongArray,
+        bss: Long
+    ) {
         if (modules.any { it.name == name }) return
-        val m = Module(name, memory)
+        val m = Module(name, memory, offsets.copyOf(), sizes.copyOf(), bss)
         try { inspect(m) } catch (e: Exception) { m.error = e.message ?: e.javaClass.simpleName }
         modules.add(m)
     }
@@ -195,7 +207,19 @@ object NsoLinkSession {
                 else
                     "LINKER: PENDENCIAS REAIS; NAO CONCLUIDO\n"
             )
-            out.append("Memoria virtual simulada; codigo ARM64 nao executado.\n")
+            out.append(
+                ProcessMemory.report(
+                    modules.filter { it.error == null }.map {
+                        ProcessMemory.ModuleView(
+                            it.name, it.base, it.data,
+                            it.offsets, it.sizes, it.bss
+                        )
+                    }
+                )
+            )
+            out.append(
+                "Execucao ARM64 do jogo nao iniciada.\n"
+            )
             // ARM64_TEST_V40
             out.append(Arm64Cpu.selfTest())
         } catch (e: Exception) {

@@ -141,7 +141,10 @@ object NsoLoader {
                 log.append(Mod0Inspector.inspect(memory, name))
                 // RELOC_V32
                 // LINK_SESSION_V35: o linker gerencia esta imagem ate finish().
-                NsoLinkSession.capture(name, memory)
+                // VM_V43
+                NsoLinkSession.capture(
+                    name, memory, addresses, sizes, bss
+                )
                 log.append("Imagem retida para ligacao entre modulos.\n")
                 log.append("Relocacao, HLE e execucao ARM64 ainda pendentes.\n")
             } finally { if (!NsoLinkSession.owns(memory)) memory.fill(0) }
