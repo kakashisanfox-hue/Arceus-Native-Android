@@ -145,6 +145,14 @@ object ProcessMemory {
                 )
             }
 
+            // ARM64_CORE_V50
+            out.append(Arm64CoreV50.selfTest())
+            if (rtld != null) {
+                out.append(Arm64CoreV50.probe(
+                    rtld.base + rtld.offsets[0]
+                ) { addr -> read32(addr, true) })
+            }
+
             val ro = regions.firstOrNull {
                 it.name.endsWith(":RO") &&
                 it.size >= 4L
