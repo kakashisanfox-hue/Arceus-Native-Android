@@ -165,6 +165,9 @@ object ProcessMemory {
                 )
             }
 
+            // INTEGRATED_V53
+            out.append(Arm64IntegratedV53.selfTest())
+
             // ARM64_CORE_V50
             out.append(Arm64CoreV50.selfTest())
             if (rtld != null) {
