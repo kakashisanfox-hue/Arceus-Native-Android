@@ -12,7 +12,7 @@ object NsoLinkSession {
     private const val MAX_TOTAL = 256L * 1024L * 1024L
 
     private data class Rel(val offset: Long, val info: Long, val addend: Long)
-    private data class Sym(val name: String, val value: Long, val defined: Boolean, val weak: Boolean)
+    private data class Sym(val name: String, val value: Long, val defined: Boolean, val weak: Boolean, val binding: Int)
     private class Module(val name: String, val data: ByteArray) {
         var base = 0L
         val rels = ArrayList<Rel>()
@@ -98,12 +98,12 @@ object NsoLinkSession {
             val stInfo = m.data[p + 4].toInt() and 255
             val shndx = b.getShort(p + 6).toInt() and 65535
             val value = b.getLong(p + 8)
-            m.symbols.add(Sym(stringAt(stName), value, shndx != 0, (stInfo ushr 4) == 2))
+            m.symbols.add(Sym(stringAt(stName), value, shndx != 0, (stInfo ushr 4) == 2, stInfo ushr 4))
         }
     }
 
     @Synchronized fun finish(): String {
-        val out = StringBuilder("\n===== LINKER v3.5 =====\n")
+        val out = StringBuilder("\n===== LINKER v3.6 =====\n")
         try {
             if (modules.isEmpty()) return out.append("Nenhum modulo NSO carregado.\n").toString()
             var next = 0x100000000L
@@ -120,14 +120,20 @@ object NsoLinkSession {
             // Preferencia por definicao no proprio modulo; depois pelos demais.
             val exports = HashMap<String, Pair<Module, Sym>>()
             for (m in modules) if (m.error == null) {
-                for (s in m.symbols) if (s.defined && s.name.isNotEmpty() && s.value >= 0 && s.value < m.data.size) {
+                for (s in m.symbols) if (s.defined && s.binding in 1..2 && s.name.isNotEmpty() && s.value >= 0 && s.value < m.data.size) {
                     val prior = exports[s.name]
                     if (prior == null || (prior.second.weak && !s.weak)) exports[s.name] = m to s
                 }
             }
             out.append("Simbolos exportados distintos: ${exports.size}\n")
-            var relative = 0; var resolved = 0; var missing = 0; var invalid = 0; var unsupported = 0
+            var relative = 0; var resolved = 0; var missing = 0; var invalid = 0; var unsupported = 0; var weakZero = 0; var special = 0
             val examples = LinkedHashSet<String>()
+            val specialNames = setOf(
+                "__rel_dyn_start", "__rel_dyn_end",
+                "__rel_plt_start", "__rel_plt_end",
+                "__EX_start", "__EX_end",
+                "__got_start", "__got_end"
+            )
             // Planejar todas as escritas antes de modificar as imagens.
             val writes = ArrayList<Triple<Module, Int, Long>>()
             for (m in modules) {
@@ -146,12 +152,23 @@ object NsoLinkSession {
                             val sym = m.symbols[index.toInt()]
                             val target = if (sym.defined) m to sym else exports[sym.name]
                             if (target == null) {
-                                missing++
-                                if (examples.size < 12) examples.add("${m.name}: ${sym.name.ifEmpty { "<sem nome>" }}")
-                                continue
+                                if (sym.weak) {
+                                    weakZero++
+                                    r.addend
+                                } else {
+                                    missing++
+                                    if (sym.name in specialNames) special++
+                                    if (examples.size < 24) {
+                                        examples.add(
+                                            "${m.name}: ${sym.name.ifEmpty { "<sem nome>" }}"
+                                        )
+                                    }
+                                    continue
+                                }
+                            } else {
+                                resolved++
+                                target.first.base + target.second.value + r.addend
                             }
-                            resolved++
-                            target.first.base + target.second.value + r.addend
                         }
                         else -> { unsupported++; continue }
                     }
@@ -160,14 +177,24 @@ object NsoLinkSession {
             }
             out.append("RELATIVE identificadas: $relative\n")
             out.append("Ligacoes simbolicas resolvidas: $resolved\n")
+            out.append("Simbolos fracos indefinidos tratados como zero: $weakZero\n")
+            out.append("Simbolos especiais pendentes: $special\n")
             out.append("Simbolos nao resolvidos: $missing\n")
             out.append("Destinos invalidos: $invalid\n")
             out.append("Tipos nao suportados: $unsupported\n")
             for (x in examples) out.append("PENDENTE: $x\n")
-            if (invalid == 0 && unsupported == 0) {
+            if (invalid == 0 && unsupported == 0 && missing == 0) {
                 for ((m, off, value) in writes) bb(m).putLong(off, value)
                 out.append("RELOCACOES APLICADAS NA SESSAO: ${writes.size}\n")
-            } else out.append("Escritas canceladas: entradas invalidas ou nao suportadas.\n")
+            } else out.append(
+                "Escritas canceladas: linker ainda incompleto.\n"
+            )
+            out.append(
+                if (missing == 0 && invalid == 0 && unsupported == 0)
+                    "LINKER: RESOLVIDO NESTA SESSAO\n"
+                else
+                    "LINKER: PENDENCIAS REAIS; NAO CONCLUIDO\n"
+            )
             out.append("Memoria virtual simulada; codigo ARM64 nao executado.\n")
         } catch (e: Exception) {
             out.append("ERRO LINKER: ${e.message}\n")
