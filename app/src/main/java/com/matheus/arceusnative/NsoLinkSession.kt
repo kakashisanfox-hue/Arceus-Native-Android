@@ -196,6 +196,8 @@ object NsoLinkSession {
                     "LINKER: PENDENCIAS REAIS; NAO CONCLUIDO\n"
             )
             out.append("Memoria virtual simulada; codigo ARM64 nao executado.\n")
+            // ARM64_TEST_V40
+            out.append(Arm64Cpu.selfTest())
         } catch (e: Exception) {
             out.append("ERRO LINKER: ${e.message}\n")
         } finally { reset() }
