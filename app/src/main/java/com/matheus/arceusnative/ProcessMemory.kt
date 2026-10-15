@@ -155,6 +155,16 @@ object ProcessMemory {
                 )
             }
 
+            // DECODER_V52
+            out.append(Arm64DecoderV52.selfTest())
+            if (rtld != null) {
+                out.append(
+                    Arm64DecoderV52.inspect(
+                        rtld.base + rtld.offsets[0]
+                    ) { addr -> read32(addr, true) }
+                )
+            }
+
             // ARM64_CORE_V50
             out.append(Arm64CoreV50.selfTest())
             if (rtld != null) {
