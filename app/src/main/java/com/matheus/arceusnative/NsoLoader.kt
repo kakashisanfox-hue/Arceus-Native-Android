@@ -86,7 +86,7 @@ object NsoLoader {
         nsoOffset: Long, key: ByteArray, fs: ByteArray,
         ncaAbsolute: Long, readAt: (Long, Int) -> ByteArray
     ): String {
-        val log = StringBuilder("\n===== NSO LOADER v3.1: $name =====\n")
+        val log = StringBuilder("\n===== NSO LOADER v3.5: $name =====\n")
         try {
             require(header.size >= 0x100 && String(header, 0, 4, Charsets.US_ASCII) == "NSO0") { "NSO0 invalido" }
             val b = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN)
@@ -140,9 +140,11 @@ object NsoLoader {
                 // MOD0_INSPECT_V31
                 log.append(Mod0Inspector.inspect(memory, name))
                 // RELOC_V32
-                log.append(RelocationInspector.apply(memory, name))
+                // LINK_SESSION_V35: o linker gerencia esta imagem ate finish().
+                NsoLinkSession.capture(name, memory)
+                log.append("Imagem retida para ligacao entre modulos.\n")
                 log.append("Relocacao, HLE e execucao ARM64 ainda pendentes.\n")
-            } finally { memory.fill(0) }
+            } finally { if (!NsoLinkSession.owns(memory)) memory.fill(0) }
         } catch (e: Exception) {
             log.append("ERRO: ${e.message}\n")
         }

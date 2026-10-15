@@ -86,7 +86,7 @@ object ExefsProbe {
         readAt: (Long, Int) -> ByteArray
     ): String {
         val out = StringBuilder()
-        out.append("\n===== EXEFS v3.2 =====\n")
+        out.append("\n===== EXEFS v3.5 =====\n")
 
         try {
             val b = ByteBuffer.wrap(header)
@@ -143,6 +143,8 @@ object ExefsProbe {
             try {
                 var found = false
 
+                NsoLinkSession.reset()
+                try {
                 for (i in 0 until 4) {
                     val entry = 0x240 + i * 16
                     val start = le32(b, entry) * 512L
@@ -339,6 +341,8 @@ object ExefsProbe {
                     }
                 }
 
+                out.append(NsoLinkSession.finish())
+                } finally { NsoLinkSession.reset() }
                 if (!found) {
                     out.append(
                         "Nenhuma secao ExeFS compativel.\n"
