@@ -210,8 +210,7 @@ object Arm64RuntimeV61 {
                     val a = lhs and mask
                     val b = imm and mask
                     val result =
-                        (if (sub) a - b else a + b)
-                            and mask
+                        ((if (sub) a - b else a + b) and mask)
 
                     if (flags) {
                         val sign =

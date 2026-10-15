@@ -183,8 +183,9 @@ object ProcessMemory {
             if (rtld != null) {
                 out.append(
                     Arm64RuntimeV61.trace(
-                        rtld.base + rtld.offsets[0]
-                    ) { addr -> read32(addr, true) }
+                        rtld.base + rtld.offsets[0],
+                        { addr -> read32(addr, true) }
+                    )
                 )
             }
 
