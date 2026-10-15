@@ -178,6 +178,16 @@ object ProcessMemory {
             // INTEGRATED_V53
             out.append(Arm64IntegratedV53.selfTest())
 
+            // ARM64_RUNTIME_V61
+            out.append(Arm64RuntimeV61.selfTest())
+            if (rtld != null) {
+                out.append(
+                    Arm64RuntimeV61.trace(
+                        rtld.base + rtld.offsets[0]
+                    ) { addr -> read32(addr, true) }
+                )
+            }
+
             // ARM64_CONSOLIDATED_V60
             out.append(Arm64ConsolidatedV60.selfTest())
             if (rtld != null) {
